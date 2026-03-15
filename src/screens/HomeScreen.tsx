@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getLanguageByCode } from '../constants/languages';
+import { getLanguageByCode, LANGUAGES } from '../constants/languages';
 import { LanguageModal } from '../components/LanguageModal';
 import { COLORS, SPACING, FONT_SIZE, BORDER_RADIUS } from '../constants/theme';
 
@@ -20,8 +20,10 @@ const { SettingsBridge } = NativeModules;
 export const HomeScreen: React.FC = () => {
   const [sourceLang, setSourceLang] = useState('en');
   const [targetLang, setTargetLang] = useState('fr');
+  const [myLanguages, setMyLanguages] = useState<string[]>(['en', 'fr']);
   const [showSourceModal, setShowSourceModal] = useState(false);
   const [showTargetModal, setShowTargetModal] = useState(false);
+  const [showMyLangsModal, setShowMyLangsModal] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -33,18 +35,22 @@ export const HomeScreen: React.FC = () => {
       const langConfig = await SettingsBridge.getLanguages();
       setSourceLang(langConfig.sourceLang || 'en');
       setTargetLang(langConfig.targetLang || 'fr');
+      const myLangsStr: string = await SettingsBridge.getMyLanguages();
+      const codes = myLangsStr.split(',').filter((c: string) => c.length > 0);
+      if (codes.length > 0) setMyLanguages(codes);
     } catch {}
   };
 
   const handleSave = useCallback(async () => {
     try {
       await SettingsBridge.saveLanguages(sourceLang, targetLang);
+      await SettingsBridge.saveMyLanguages(myLanguages.join(','));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e: any) {
       Alert.alert('Error', 'Failed to save settings');
     }
-  }, [sourceLang, targetLang]);
+  }, [sourceLang, targetLang, myLanguages]);
 
   const openInputSettings = () => {
     if (Platform.OS === 'android') {
@@ -60,6 +66,10 @@ export const HomeScreen: React.FC = () => {
 
   const sourceLangData = getLanguageByCode(sourceLang);
   const targetLangData = getLanguageByCode(targetLang);
+
+  const myLangItems = myLanguages
+    .map((code) => LANGUAGES.find((l) => l.code === code))
+    .filter(Boolean);
 
   return (
     <View style={styles.container}>
@@ -85,11 +95,33 @@ export const HomeScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Default Languages */}
+          {/* My Languages */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Default Languages</Text>
+            <Text style={styles.cardTitle}>My Languages</Text>
             <Text style={styles.cardDesc}>
-              Choose the default source and target languages for translation. You can also switch languages directly from the keyboard.
+              Choose 2-5 languages to quickly switch between on the keyboard. Tap the globe key to cycle, swipe the spacebar to switch.
+            </Text>
+            <View style={styles.chipRow}>
+              {myLangItems.map((lang) => (
+                <View key={lang!.code} style={styles.chip}>
+                  <Text style={styles.chipFlag}>{lang!.flag}</Text>
+                  <Text style={styles.chipText}>{lang!.name}</Text>
+                </View>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={[styles.primaryButton, { marginTop: SPACING.md }]}
+              onPress={() => setShowMyLangsModal(true)}
+            >
+              <Text style={styles.primaryButtonText}>Edit My Languages</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Default Translation Languages */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Translation Languages</Text>
+            <Text style={styles.cardDesc}>
+              Choose the default source and target languages for translation.
             </Text>
             <View style={styles.langRow}>
               <TouchableOpacity
@@ -103,7 +135,7 @@ export const HomeScreen: React.FC = () => {
                 </View>
               </TouchableOpacity>
 
-              <Text style={styles.arrow}>→</Text>
+              <Text style={styles.arrow}>{'\u2192'}</Text>
 
               <TouchableOpacity
                 style={styles.langButton}
@@ -133,9 +165,9 @@ export const HomeScreen: React.FC = () => {
             <Text style={styles.infoTitle}>How it works</Text>
             <Text style={styles.infoText}>
               1. Type normally using SmartType in any app{'\n'}
-              2. Tap the Translate button on the keyboard{'\n'}
-              3. The keyboard reads your text, translates it via AI, and shows the result{'\n'}
-              4. Tap the translation to replace your text
+              2. Tap the translate icon at the top-right of the keyboard{'\n'}
+              3. The translation bar expands — tap Translate{'\n'}
+              4. Tap the result to replace your text
             </Text>
           </View>
 
@@ -143,10 +175,11 @@ export const HomeScreen: React.FC = () => {
             <Text style={styles.infoTitle}>Keyboard Features</Text>
             <Text style={styles.infoText}>
               {'\u2022'} 20 languages with native keyboard layouts{'\n'}
-              {'\u2022'} Tap the globe key to switch input language{'\n'}
+              {'\u2022'} Tap globe to cycle your chosen languages{'\n'}
+              {'\u2022'} Long-press globe for the full language list{'\n'}
+              {'\u2022'} Swipe spacebar left/right to switch language{'\n'}
               {'\u2022'} Tap the emoji key for emojis{'\n'}
-              {'\u2022'} Arabic, Cyrillic, Thai, Hindi, Bengali layouts{'\n'}
-              {'\u2022'} AI-powered translation in any app
+              {'\u2022'} Collapsible translation bar — clean by default
             </Text>
           </View>
 
@@ -167,6 +200,14 @@ export const HomeScreen: React.FC = () => {
         onSelect={(lang) => { setTargetLang(lang.code); setShowTargetModal(false); }}
         selectedCode={targetLang}
         title="Target Language"
+      />
+      <LanguageModal
+        visible={showMyLangsModal}
+        onClose={() => setShowMyLangsModal(false)}
+        title="My Languages"
+        multiSelect
+        selectedCodes={myLanguages}
+        onMultiSelect={setMyLanguages}
       />
     </View>
   );
@@ -223,6 +264,28 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: FONT_SIZE.md,
     fontWeight: '700',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.keySpecial,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: SPACING.xs,
+  },
+  chipFlag: { fontSize: 18 },
+  chipText: {
+    color: COLORS.textPrimary,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '600',
   },
   langRow: {
     flexDirection: 'row',
